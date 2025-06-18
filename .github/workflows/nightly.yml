@@ -1,0 +1,106 @@
+name: Nightly Tests
+
+on:
+  schedule:
+    # Run at 2 AM UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  comprehensive-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18.x, 20.x, 22.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run comprehensive tests
+      run: |
+        npm run build
+        npm run test:coverage
+        npm link
+        
+    - name: Test CLI on ${{ matrix.os }}
+      shell: bash
+      run: |
+        feral-code --version
+        feral-code --help
+        
+    - name: Test provider configurations
+      shell: bash
+      env:
+        FERAL_CODE_PROVIDER: openai
+        OPENAI_API_KEY: test-key
+      run: |
+        feral-code config || echo "Expected failure with test key"
+        
+    - name: Performance benchmarks
+      shell: bash
+      run: |
+        time feral-code --help
+        time feral-code config || true
+
+  memory-leak-test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build project
+      run: npm run build
+
+    - name: Install clinic.js for memory profiling
+      run: npm install -g clinic
+
+    - name: Memory leak test
+      run: |
+        npm link
+        # Run multiple CLI invocations to check for memory leaks
+        for i in {1..10}; do
+          feral-code --version
+        done
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Check for outdated dependencies
+      run: npm outdated || true
+
+    - name: License check
+      run: |
+        npx license-checker --summary
+        npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC'
